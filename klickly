@@ -1,0 +1,211 @@
+#!/bin/bash
+#
+# A command-line metronome using lilypond snippets to support arbitrary musical patterns.
+#
+# See `usage()` for further details.
+#
+# Copyright (C) 2024  David Hobach  GPLv3
+
+set -o pipefail
+
+#error [msg]
+function error {
+echo "$1" >&2
+exit 1
+}
+
+#debug [msg]
+function debug {
+[ $DEBUG -eq 0 ] && echo "DEBUG: $1" >&2
+}
+
+#global vars
+SCRIPT_DIR="$(readlink -f "${BASH_SOURCE[0]}")" || error "Failed to compute SCRIPT_DIR."
+SCRIPT_DIR="$(dirname "$SCRIPT_DIR")" || error "Failed to compute SCRIPT_DIR."
+SCRIPT_NAME="${BASH_SOURCE[0]##*/}"
+LY_DIR="$SCRIPT_DIR/ly"
+COMMON_DIR="$LY_DIR/common"
+[ -f "/etc/$SCRIPT_NAME.conf" ] && CONF="/etc/$SCRIPT_NAME.conf" || CONF="$SCRIPT_DIR/$SCRIPT_NAME.conf"
+
+function usage {
+echo "$SCRIPT_NAME [tempo] [file]
+
+A command-line metronome using lilypond snippets to support arbitrary musical patterns.
+
+[tempo]: Tempo in bpm to use. Either specify a number or an instruction such as '4 = 120'.
+         Also, you may specify a varying tempo with
+         [tempo] = [start]:[increase]:[duration]:[end]
+
+         [start]:    Start tempo in bpm.
+         [increase]: Bpm increase per [duration] repetitions (default: 2).
+         [duration]: How often to repeat the pattern before increasing the bpm (default: 2).
+         [end]:      Final tempo in bpm (default: 200). Afterwards the pattern starts with
+                     [start] bpm again.
+
+[file]:  Full path to the lilypond file to use as metronome. Check the ly folder for the
+         currently available patterns. Can be left out or specified as fuzzy path, if fzf
+         is installed.
+
+Further configuration options are available at $CONF."
+exit 1
+}
+
+function deps {
+local dep=
+local unmet=""
+
+for dep in "$@" ; do
+  [ -z "$dep" ] && continue
+  command -v "$dep" &> /dev/null || unmet="$dep"$'\n'"$unmet"
+done
+
+[ -z "$unmet" ] || error "The script requires the following commands, but they were not found:"$'\n'"$unmet"
+}
+
+#generate the midi.ly file content
+#NOTE: this could also be done in guile scheme, but that syntax is rather terrible; it's probably also more slow
+function genMidiLy {
+local tempo="$1"
+local tempoBase="$2"
+local tempoIncrease="$3"
+local tempoDuration="$4"
+local tempoEnd="$5"
+
+if [ $tempoIncrease -le 0 ] ; then
+  #static tempo
+  echo -E "myMidiMusic = \\repeat unfold $REPEATS { \\myMusic }"
+else
+  #dynamic tempo
+  local tempoIts=$(( ($tempoEnd - $tempo) / $tempoIncrease ))
+  [ $tempoIts -lt 1 ] && tempoIts=1
+  local reps=$(( $REPEATS / $tempoDuration / $tempoIts ))
+  [ $reps -lt 1 ] && reps=1
+  echo -E "myMidiMusic = \\repeat unfold $reps { "
+  local i=
+  for (( i=$tempo ; i <= $tempoEnd ; i=i+$tempoIncrease )) ; do
+    echo -E "\\repeat unfold $tempoDuration { \\tempo $tempoBase = $i \\myMusic }"
+  done
+  echo -E "}"
+fi
+}
+
+function main {
+[ $# -lt 1 ] && usage
+{ [[ "$1" == "-h" ]] || [[ "$1" == *"help"* ]] ; } && usage
+
+deps "mktemp" "lilypond" "find" "sort"
+
+#load config
+[ -f "$CONF" ] || error "The configuration file at $CONF does not exist."
+source "$CONF"
+deps "${MIDI_PLAYER%% *}"
+
+#parse args
+local tempo="$1"
+local tempoBase="$TEMPO_BASE"
+local token=
+local i=0
+local re='^[0-9]*$'
+local reTempoBase='^([0-9\.]+)[ ]*=[ ]*([0-9]+)$'
+IFS=: read -r -a tokens <<< "$tempo"
+for token in "${tokens[@]}" ; do
+  if [ $i -eq 0 ] ; then
+    if [[ "$token" =~ $re ]] ; then
+      tempo="$token"
+    elif [[ "$token" =~ $reTempoBase ]] ; then
+      #handle tempo base notation
+      tempoBase="${BASH_REMATCH[1]}"
+      tempo="${BASH_REMATCH[2]}"
+    else
+      error "Tempo in invalid format: $tempo"
+    fi
+  fi
+  [ $i -ne 0 ] && [[ ! "$token" =~ $re ]] && error "Tempo in invalid format: $tempo"
+  i=$(( $i+1 ))
+done
+local tempoIncrease="${tokens[1]:-0}"
+[[ "$1" == *":"* ]] && [ $tempoIncrease -eq 0 ] && tempoIncrease=2 #set default only if a dynamic tempo was chosen
+local tempoDuration="${tokens[2]:-2}"
+local tempoEnd="${tokens[3]:-200}"
+
+debug "tempo: $tempo"
+debug "tempo increase: $tempoIncrease"
+debug "tempo duration: $tempoDuration"
+debug "tempo end: $tempoEnd"
+debug "tempo base: $tempoBase"
+
+#arg checks
+[ $tempo -gt 0 ] || error "The tempo must be > 0."
+[ $tempoIncrease -ge 0 ] || error "The increase must be >= 0."
+[ $tempoDuration -gt 0 ] || error "The duration must be > 0."
+[ $tempoEnd -gt 0 ] || error "The end tempo must be > 0."
+[ $tempo -lt $tempoEnd ] || error "The start tempo must be lower than the end tempo."
+
+#obtain file path
+local lyFile="$2"
+if [ ! -f "$lyFile" ] ; then
+  if command -v "fzf" &> /dev/null ; then
+    lyFile="$(find "$LY_DIR" -name '*.ly' -not -path "*/common/*" | sort | fzf $FZF_OPTS -q "$lyFile")" || error "Failed to execute fzf."
+    echo "$lyFile"
+  fi
+fi
+[ -f "$lyFile" ] || error "File does not exist: $lyFile"
+
+#create working dir
+local wDir wDirEsc
+wDir="$(mktemp -d)" || error "Failed to run mktemp."
+printf -v wDirEsc '%q' "$wDir"
+if [ $DEBUG -eq 0 ] ; then
+  debug "working dir: $wDir"
+else
+  trap "rm -rf $wDirEsc" EXIT
+fi
+
+#copy necessary files
+cp "$lyFile" "$wDir" || error "Failed to copy $lyFile."
+cp -r "$COMMON_DIR" "$wDir" || error "Failed to copy $COMMON_DIR."
+
+#do necessary modifications
+local vars="$wDir/common/vars.ly"
+local midi="$wDir/common/midi.ly"
+{
+  echo -E "
+    myTempo = $tempo
+    myTempoBase = ##{ $tempoBase #}
+    myTempoIncrease = $tempoIncrease
+    myTempoDuration = $tempoDuration
+    myTempoEnd = $tempoEnd
+    myInstrument = \"$MIDI_INSTRUMENT\"
+    myAccP = $ACCENT_PRIMARY
+    myAccS = $ACCENT_SECONDARY
+    myReg = $REGULAR_NOTE
+    myRepeats = $REPEATS
+    $RAW_VARS
+  "
+} >> "$vars"
+genMidiLy "$tempo" "$tempoBase" "$tempoIncrease" "$tempoDuration" "$tempoEnd" > "$midi" || error "Failed to generate the midi.ly file."
+
+#generate MIDI output
+lyFile="$wDir/${lyFile##*/}"
+echo "Compiling..."
+local addOpts=""
+[ -z "$PDF_VIEWER" ] && addOpts="-dno-print-pages"
+( #subshell as we cd
+  cd "$wDir"
+  lilypond $addOpts "$lyFile" &> "$wDir/lilypond.log"
+) || error "Failed to run lilypond on $lyFile. Errors:"$'\n'"$(cat "$wDir/lilypond.log")"
+
+#show pdf
+local pdfFile="${lyFile%.ly}.pdf"
+if [ -n "$PDF_VIEWER" ] ; then
+  $PDF_VIEWER "$pdfFile" &> /dev/null < /dev/null &
+  disown
+fi
+
+#play MIDI output
+local midiFile="${lyFile%.ly}.midi"
+echo "Playing..."
+$MIDI_PLAYER "$midiFile" > /dev/null
+}
+
+main "$@"
