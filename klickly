@@ -39,8 +39,8 @@ A command-line metronome using lilypond snippets to support arbitrary musical pa
          [start]:    Start tempo in bpm.
          [increase]: Bpm increase per [duration] repetitions (default: 2).
          [duration]: How often to repeat the pattern before increasing the bpm (default: 2).
-         [end]:      Final tempo in bpm (default: 200). Afterwards the pattern starts with
-                     [start] bpm again.
+         [end]:      Final tempo in bpm (default: [start]+150). Afterwards the pattern starts
+                     with [start] bpm again.
 
 [file]:  Full path to the lilypond file to use as metronome. Check the ly folder for the
          currently available patterns. Can be left out or specified as fuzzy path, if fzf
@@ -126,7 +126,7 @@ done
 local tempoIncrease="${tokens[1]:-0}"
 [[ "$1" == *":"* ]] && [ $tempoIncrease -eq 0 ] && tempoIncrease=2 #set default only if a dynamic tempo was chosen
 local tempoDuration="${tokens[2]:-2}"
-local tempoEnd="${tokens[3]:-200}"
+local tempoEnd="${tokens[3]:-$(( $tempo + 150))}"
 
 debug "tempo: $tempo"
 debug "tempo increase: $tempoIncrease"
