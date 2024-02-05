@@ -23,6 +23,7 @@ function debug {
 SCRIPT_DIR="$(readlink -f "${BASH_SOURCE[0]}")" || error "Failed to compute SCRIPT_DIR."
 SCRIPT_DIR="$(dirname "$SCRIPT_DIR")" || error "Failed to compute SCRIPT_DIR."
 SCRIPT_NAME="${BASH_SOURCE[0]##*/}"
+LAST="$SCRIPT_DIR/$SCRIPT_NAME.last"
 LY_DIR="$SCRIPT_DIR/ly"
 COMMON_DIR="$LY_DIR/common"
 [ -f "/etc/$SCRIPT_NAME.conf" ] && CONF="/etc/$SCRIPT_NAME.conf" || CONF="$SCRIPT_DIR/$SCRIPT_NAME.conf"
@@ -93,7 +94,7 @@ function main {
 [ $# -lt 1 ] && usage
 { [[ "$1" == "-h" ]] || [[ "$1" == *"help"* ]] ; } && usage
 
-deps "mktemp" "lilypond" "find" "sort"
+deps "mktemp" "lilypond" "find" "sort" "cat"
 
 #load config
 [ -f "$CONF" ] || error "The configuration file at $CONF does not exist."
@@ -144,12 +145,19 @@ debug "tempo base: $tempoBase"
 #obtain file path
 local lyFile="$2"
 if [ ! -f "$lyFile" ] ; then
+  if [ $REMEMBER -eq 0 ] && [ -z "$lyFile" ] ; then
+    local last="$(cat "$LAST" 2> /dev/null)"
+    [ -f "$last" ] && lyFile="$last"
+  fi
   if command -v "fzf" &> /dev/null ; then
+    lyFile="${lyFile##$LY_DIR/}"
+    lyFile="${lyFile%.ly}"
     lyFile="$(find "$LY_DIR" -name '*.ly' -not -path "*/common/*" | sort | fzf $FZF_OPTS -q "$lyFile")" || error "Failed to execute fzf."
     echo "$lyFile"
   fi
 fi
 [ -f "$lyFile" ] || error "File does not exist: $lyFile"
+[ $REMEMBER -eq 0 ] && echo "$lyFile" > "$LAST"
 
 #create working dir
 local wDir wDirEsc
