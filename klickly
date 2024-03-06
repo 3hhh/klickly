@@ -213,7 +213,7 @@ fi
 #play MIDI output
 local midiFile="${lyFile%.ly}.midi"
 echo "Playing..."
-$MIDI_PLAYER "$midiFile" > /dev/null
+$MIDI_PLAYER "$midiFile"
 }
 
 main "$@"
