@@ -19,7 +19,7 @@ myMusic = {
     }
     \repeat unfold \the_loop_times { %16th
         \accP16 \repeat unfold 3 { \reg16 }
-        \repeat unfold 3 { 
+        \repeat unfold 3 {
             \accS16 \repeat unfold 3 { \reg16 }
         }
     }

@@ -17,7 +17,7 @@ myMusic = {
     }
     \repeat unfold \the_loop_times { %32th
         \accP32 \repeat unfold 7 { \reg32 }
-        \repeat unfold 3 { 
+        \repeat unfold 3 {
             \accS32 \repeat unfold 7 { \reg32 }
         }
     }
