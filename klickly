@@ -40,8 +40,9 @@ A command-line metronome using lilypond snippets to support arbitrary musical pa
          [start]:    Start tempo in bpm.
          [increase]: Bpm increase per [duration] repetitions (default: 2).
          [duration]: How often to repeat the pattern before increasing the bpm (default: 2).
-         [end]:      Final tempo in bpm (default: [start]+150). Afterwards the pattern starts
-                     with [start] bpm again.
+         [end]:      Final tempo in bpm (default: [start]+150). If positive, the pattern
+                     starts with [start] bpm again. If prefixed with a minus sign, the tempo
+                     will slowly decrease by [increase] bpms until it reaches [start].
 
 [file]:  Full path to the lilypond file to use as metronome. Check the ly folder for the
          currently available patterns. Can be left out or specified as fuzzy path, if fzf
@@ -71,6 +72,13 @@ local tempoBase="$2"
 local tempoIncrease="$3"
 local tempoDuration="$4"
 local tempoEnd="$5"
+local tempoDecrease=1
+
+#special case: negative end tempo --> we need to go back to the base tempo in the end
+if [ $tempoEnd -le 0 ] ; then
+  tempoDecrease=0
+  tempoEnd=$(( - $tempoEnd ))
+fi
 
 if [ $tempoIncrease -le 0 ] ; then
   #static tempo
@@ -80,12 +88,18 @@ else
   local tempoIts=$(( ($tempoEnd - $tempo) / $tempoIncrease ))
   [ $tempoIts -lt 1 ] && tempoIts=1
   local reps=$(( $REPEATS / $tempoDuration / $tempoIts ))
+  [ $tempoDecrease -eq 0 ] && reps=$(( $reps / 2 ))
   [ $reps -lt 1 ] && reps=1
   echo -E "myMidiMusic = \\repeat unfold $reps { "
   local i=
   for (( i=$tempo ; i <= $tempoEnd ; i=i+$tempoIncrease )) ; do
     echo -E "\\repeat unfold $tempoDuration { \\tempo $tempoBase = $i \\myMusic }"
   done
+  if [ $tempoDecrease -eq 0 ] ; then
+    for (( i=$tempoEnd-$tempoIncrease ; i > $tempo ; i=i-$tempoIncrease )) ; do
+      echo -E "\\repeat unfold $tempoDuration { \\tempo $tempoBase = $i \\myMusic }"
+    done
+  fi
   echo -E "}"
 fi
 }
@@ -107,6 +121,7 @@ local tempoBase="$TEMPO_BASE"
 local token=
 local i=0
 local re='^[0-9]*$'
+local reNeg='^-?[0-9]*$'
 local reTempoBase='^([0-9\.]+)[ ]*=[ ]*([0-9]+)$'
 IFS=: read -r -a tokens <<< "$tempo"
 for token in "${tokens[@]}" ; do
@@ -120,8 +135,11 @@ for token in "${tokens[@]}" ; do
     else
       error "Tempo in invalid format: $tempo"
     fi
+  elif [ $i -eq 3 ] ; then
+    [[ ! "$token" =~ $reNeg ]] && error "Token in invalid format: $token"
+  else
+    [[ ! "$token" =~ $re ]] && error "Token in invalid format: $token"
   fi
-  [ $i -ne 0 ] && [[ ! "$token" =~ $re ]] && error "Tempo in invalid format: $tempo"
   i=$(( $i+1 ))
 done
 local tempoIncrease="${tokens[1]:-0}"
@@ -133,14 +151,14 @@ debug "tempo: $tempo"
 debug "tempo increase: $tempoIncrease"
 debug "tempo duration: $tempoDuration"
 debug "tempo end: $tempoEnd"
-debug "tempo base: $tempoBase"
 
 #arg checks
 [ $tempo -gt 0 ] || error "The tempo must be > 0."
 [ $tempoIncrease -ge 0 ] || error "The increase must be >= 0."
 [ $tempoDuration -gt 0 ] || error "The duration must be > 0."
-[ $tempoEnd -gt 0 ] || error "The end tempo must be > 0."
-[ $tempo -lt $tempoEnd ] || error "The start tempo must be lower than the end tempo."
+local tempoE="$tempoEnd"
+[ $tempoE -lt 0 ] && tempoE=$(( - $tempoE ))
+[ $tempo -lt $tempoE ] || error "The start tempo must be lower than the end tempo."
 
 #obtain file path
 local lyFile="$2"
@@ -158,6 +176,16 @@ if [ ! -f "$lyFile" ] ; then
 fi
 [ -f "$lyFile" ] || error "File does not exist: $lyFile"
 [ $REMEMBER -eq 0 ] && echo "$lyFile" > "$LAST"
+
+#tempo base heuristics
+if [ -z "$tempoBase" ] ; then
+  if [[ "$lyFile" == *"/6-8/"* ]] ; then
+    tempoBase="4."
+  else
+    tempoBase="4"
+  fi
+fi
+debug "tempo base: $tempoBase"
 
 #create working dir
 local wDir wDirEsc
