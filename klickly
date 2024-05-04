@@ -113,7 +113,7 @@ deps "mktemp" "lilypond" "find" "sort" "cat"
 #load config
 [ -f "$CONF" ] || error "The configuration file at $CONF does not exist."
 source "$CONF"
-deps "${MIDI_PLAYER%% *}"
+deps "${MIDI_PLAYER%% *}" "${MIDI_PLAYER_NO_STDIN%% *}"
 
 #parse args
 local tempo="$1"
@@ -167,7 +167,7 @@ if [ ! -f "$lyFile" ] ; then
     local last="$(cat "$LAST" 2> /dev/null)"
     [ -f "$last" ] && lyFile="$last"
   fi
-  if command -v "fzf" &> /dev/null ; then
+  if [ -t 0 ] && command -v "fzf" &> /dev/null ; then
     lyFile="${lyFile##$LY_DIR/}"
     lyFile="${lyFile%.ly}"
     lyFile="$(find "$LY_DIR" -name '*.ly' -not -path "*/common/*" | sort | fzf $FZF_OPTS -q "$lyFile")" || error "Failed to execute fzf."
@@ -241,7 +241,7 @@ fi
 #play MIDI output
 local midiFile="${lyFile%.ly}.midi"
 echo "Playing..."
-$MIDI_PLAYER "$midiFile"
+[ -t 0 ] && $MIDI_PLAYER "$midiFile" || $MIDI_PLAYER_NO_STDIN "$midiFile"
 }
 
 main "$@"
