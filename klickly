@@ -108,7 +108,7 @@ function main {
 [ $# -lt 1 ] && usage
 { [[ "$1" == "-h" ]] || [[ "$1" == *"help"* ]] ; } && usage
 
-deps "mktemp" "lilypond" "find" "sort" "cat"
+deps "mktemp" "lilypond" "find" "sort" "cat" "pkill"
 
 #load config
 [ -f "$CONF" ] || error "The configuration file at $CONF does not exist."
@@ -193,8 +193,9 @@ wDir="$(mktemp -d)" || error "Failed to run mktemp."
 printf -v wDirEsc '%q' "$wDir"
 if [ $DEBUG -eq 0 ] ; then
   debug "working dir: $wDir"
+  trap "pkill -P $$" EXIT
 else
-  trap "rm -rf $wDirEsc" EXIT
+  trap "rm -rf $wDirEsc; pkill -P $$" EXIT
 fi
 
 #copy necessary files
