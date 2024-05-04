@@ -1,0 +1,70 @@
+#!/bin/bash
+# 
+# "Ultimate Double Bass Drumming Routine 2.0"
+# source: https://www.youtube.com/watch?v=SM-Wc6AOki0 / https://www.artofdrumminghq.com/product-page/ultimate-double-bass-drumming-routine-2-0-pdf
+
+set -e -o pipefail
+
+#error [msg]
+function error {
+echo "$1" >&2
+exit 1
+}
+
+function usage {
+echo "$SCRIPT_NAME [bpm] [duration] [pause]"
+exit 1
+}
+
+SCRIPT_DIR="$(readlink -f "${BASH_SOURCE[0]}")" || error "Failed to compute SCRIPT_DIR."
+SCRIPT_DIR="$(dirname "$SCRIPT_DIR")" || error "Failed to compute SCRIPT_DIR."
+SCRIPT_NAME="${BASH_SOURCE[0]##*/}"
+LY_DIR="$SCRIPT_DIR/../ly"
+KLICKLY="$SCRIPT_DIR/../klickly"
+
+[[ "$1" == "help" ]] && usage
+bpm="${1:-80}"
+duration="${2:-60}" #in seconds
+pause="${3:-10}" #seconds before start & as break
+pattern="$LY_DIR/4-4/8th.ly"
+
+function click {
+  local bpm="$1"
+  local msg="$2"
+
+  #some pause before start
+  echo "Pausing (${pause}s)..."
+  sleep "$pause"
+
+  echo ""
+  echo "$msg (${duration}s)"
+  $KLICKLY "$bpm" "$pattern" < /dev/null &
+  sleep "$duration"
+  kill "$!"
+}
+
+echo "Running at $bpm bpm..."
+
+# 1. Muscle warmup 3x (-20 bpm from threshold)
+for (( i = 0; i < 3 ; i++ )) ; do
+  click "$(( $bpm -20 ))" "Muscle Warmup $i"
+done
+
+# 2. Muscle strength 3x
+for (( i = 0; i < 3 ; i++ )) ; do
+  click "$bpm" "Muscle Strength $i"
+done
+
+# 3. Burst control 1
+# 4. Burst control 2
+for (( i = 0; i < 2 ; i++ )) ; do
+  click "$bpm" "Burst Control $i"
+done
+
+# 5. Solo-leg control 2x (half bpm)
+for (( i = 0; i < 2 ; i++ )) ; do
+  click "$(( $bpm / 2 ))" "Solo-leg Control $i"
+done
+
+# 6. System endurance
+click "$bpm" "System Endurance"
