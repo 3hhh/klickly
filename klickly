@@ -29,7 +29,7 @@ COMMON_DIR="$LY_DIR/common"
 [ -f "/etc/$SCRIPT_NAME.conf" ] && CONF="/etc/$SCRIPT_NAME.conf" || CONF="$SCRIPT_DIR/$SCRIPT_NAME.conf"
 
 function usage {
-echo "$SCRIPT_NAME [tempo] [file]
+echo "$SCRIPT_NAME [options] [tempo] [file]
 
 A command-line metronome using lilypond snippets to support arbitrary musical patterns.
 
@@ -47,6 +47,10 @@ A command-line metronome using lilypond snippets to support arbitrary musical pa
 [file]:  Full path to the lilypond file to use as metronome. Check the ly folder for the
          currently available patterns. Can be left out or specified as fuzzy path, if fzf
          is installed.
+
+[options]:
+  -i    Force interactive mode (default, if a terminal appears to be connected).
+  -n    Force non-interactive mode (default, if no terminal appears to be connected).
 
 Further configuration options are available at $CONF."
 exit 1
@@ -105,15 +109,44 @@ fi
 }
 
 function main {
-[ $# -lt 1 ] && usage
-{ [[ "$1" == "-h" ]] || [[ "$1" == *"help"* ]] ; } && usage
+#set defaults
+local interactive=0
+[ -t 0 ] || interactive=1
 
-deps "mktemp" "lilypond" "find" "sort" "cat" "pkill"
+#parse options
+while : ; do
+  case "$1" in
+    "-h")
+      usage
+      ;;
+    "help")
+      usage
+      ;;
+    "-n")
+      interactive=1
+      ;;
+    "-i")
+      interactive=0
+      ;;
+    "--")
+      break
+      ;;
+    *)
+      [[ "$1" == "-"* ]] && error "Invalid parameter: $1" || break
+      ;;
+  esac
+
+  shift
+done
+
+[ $# -lt 1 ] && usage
+
+deps "mktemp" "lilypond" "find" "sort" "cat"
 
 #load config
 [ -f "$CONF" ] || error "The configuration file at $CONF does not exist."
 source "$CONF"
-deps "${MIDI_PLAYER%% *}" "${MIDI_PLAYER_NO_STDIN%% *}"
+deps "${MIDI_PLAYER_INTERACTIVE%% *}" "${MIDI_PLAYER_NON_INTERACTIVE%% *}"
 
 #parse args
 local tempo="$1"
@@ -167,7 +200,7 @@ if [ ! -f "$lyFile" ] ; then
     local last="$(cat "$LAST" 2> /dev/null)"
     [ -f "$last" ] && lyFile="$last"
   fi
-  if [ -t 0 ] && command -v "fzf" &> /dev/null ; then
+  if [ $interactive -eq 0 ] && command -v "fzf" &> /dev/null ; then
     lyFile="${lyFile##$LY_DIR/}"
     lyFile="${lyFile%.ly}"
     lyFile="$(find "$LY_DIR" -name '*.ly' -not -path "*/common/*" | sort | fzf $FZF_OPTS -q "$lyFile")" || error "Failed to execute fzf."
@@ -193,9 +226,8 @@ wDir="$(mktemp -d)" || error "Failed to run mktemp."
 printf -v wDirEsc '%q' "$wDir"
 if [ $DEBUG -eq 0 ] ; then
   debug "working dir: $wDir"
-  trap "pkill -P $$" EXIT
 else
-  trap "rm -rf $wDirEsc; pkill -P $$" EXIT
+  trap "rm -rf $wDirEsc" EXIT
 fi
 
 #copy necessary files
@@ -242,7 +274,11 @@ fi
 #play MIDI output
 local midiFile="${lyFile%.ly}.midi"
 echo "Playing..."
-[ -t 0 ] && $MIDI_PLAYER "$midiFile" || $MIDI_PLAYER_NO_STDIN "$midiFile"
+if [ $interactive -eq 0 ] ; then
+  exec $MIDI_PLAYER_INTERACTIVE "$midiFile"
+else
+  exec $MIDI_PLAYER_NON_INTERACTIVE "$midiFile"
+fi
 }
 
 main "$@"

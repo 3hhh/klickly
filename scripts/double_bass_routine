@@ -38,7 +38,7 @@ function click {
 
   echo ""
   echo "$msg (${duration}s)"
-  $KLICKLY "$bpm" "$pattern" < /dev/null &
+  $KLICKLY -n "$bpm" "$pattern" &
   sleep "$duration"
   kill "$!"
 }
