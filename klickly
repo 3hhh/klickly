@@ -129,10 +129,11 @@ while : ; do
       interactive=0
       ;;
     "--")
+      shift
       break
       ;;
     *)
-      [[ "$1" == "-"* ]] && error "Invalid parameter: $1" || break
+      [[ "$1" == "-"* ]] && error "Invalid option: $1" || break
       ;;
   esac
 
