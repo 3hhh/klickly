@@ -142,7 +142,7 @@ done
 
 [ $# -lt 1 ] && usage
 
-deps "mktemp" "lilypond" "find" "sort" "cat"
+deps "mktemp" "lilypond" "find" "sort" "cat" "readlink"
 
 #load config
 [ -f "$CONF" ] || error "The configuration file at $CONF does not exist."
@@ -209,7 +209,7 @@ if [ ! -f "$lyFile" ] ; then
   fi
 fi
 [ -f "$lyFile" ] || error "File does not exist: $lyFile"
-[ $REMEMBER -eq 0 ] && echo "$lyFile" > "$LAST"
+[ $REMEMBER -eq 0 ] && readlink -e "$lyFile" > "$LAST"
 
 #tempo base heuristics
 if [ -z "$tempoBase" ] ; then
