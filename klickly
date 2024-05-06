@@ -194,6 +194,9 @@ local tempoE="$tempoEnd"
 [ $tempoE -lt 0 ] && tempoE=$(( - $tempoE ))
 [ $tempo -lt $tempoE ] || error "The start tempo must be lower than the end tempo."
 
+#only remember, if in interactive mode
+[ $interactive -eq 0 ] || REMEMBER=1
+
 #obtain file path
 local lyFile="$2"
 if [ ! -f "$lyFile" ] ; then
