@@ -9,6 +9,7 @@ A command-line metronome using [lilypond](https://lilypond.org/) snippets to sup
 - option to dynamically increase the tempo
 - highly configurable
 - common metronome patterns included
+- [scriptable](https://github.com/3hhh/klickly/tree/master/scripts)
 - MIDI output
 
 ## Installation
