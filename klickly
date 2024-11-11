@@ -25,8 +25,14 @@ SCRIPT_DIR="$(dirname "$SCRIPT_DIR")" || error "Failed to compute SCRIPT_DIR."
 SCRIPT_NAME="${BASH_SOURCE[0]##*/}"
 LAST="$SCRIPT_DIR/$SCRIPT_NAME.last"
 LY_DIR="$SCRIPT_DIR/ly"
+MIDI2DEV="$SCRIPT_DIR/util/midi2dev.py"
 COMMON_DIR="$LY_DIR/common"
 [ -f "/etc/$SCRIPT_NAME.conf" ] && CONF="/etc/$SCRIPT_NAME.conf" || CONF="$SCRIPT_DIR/$SCRIPT_NAME.conf"
+REPEATS=1
+
+#set exit trap
+EXIT_TRAP='kill $(jobs -p) &> /dev/null ; wait' #kill any existing background jobs (necessary as bash doesn't pass SIGINT to child processes by default)
+trap 'eval $EXIT_TRAP' EXIT
 
 function usage {
 echo "$SCRIPT_NAME [options] [tempo] [file]
@@ -108,6 +114,12 @@ else
 fi
 }
 
+#whether or not $MIDI_SERVER is already running
+function is_server_running {
+  local server="${MIDI_SERVER%% *}"
+  pgrep -f "$server" > /dev/null
+}
+
 function main {
 #set defaults
 local interactive=0
@@ -142,12 +154,12 @@ done
 
 [ $# -lt 1 ] && usage
 
-deps "mktemp" "lilypond" "find" "sort" "cat" "readlink"
+deps "mktemp" "lilypond" "find" "sort" "cat" "readlink" "pgrep"
 
 #load config
 [ -f "$CONF" ] || error "The configuration file at $CONF does not exist."
 source "$CONF"
-deps "${MIDI_PLAYER_INTERACTIVE%% *}" "${MIDI_PLAYER_NON_INTERACTIVE%% *}"
+deps "${MIDI_SERVER%% *}"
 
 #parse args
 local tempo="$1"
@@ -231,7 +243,7 @@ printf -v wDirEsc '%q' "$wDir"
 if [ $DEBUG -eq 0 ] ; then
   debug "working dir: $wDir"
 else
-  trap "rm -rf $wDirEsc" EXIT
+  EXIT_TRAP="$EXIT_TRAP ; rm -rf $wDirEsc"
 fi
 
 #copy necessary files
@@ -275,14 +287,30 @@ if [ -n "$PDF_VIEWER" ] ; then
   disown
 fi
 
+#start MIDI server, if necessary
+if [ -n "$MIDI_SERVER" ] && ! is_server_running ; then
+  echo "Starting MIDI server: $MIDI_SERVER"
+  (
+    [ $KEEP_SERVER -eq 0 ] && set -m #ignore Ctrl-C
+    $MIDI_SERVER &> /dev/null < /dev/null
+  ) &
+  server_pid=$!
+  disown
+
+  #wait for the server to come up
+  sleep $MIDI_SERVER_WAIT
+
+  if [ $KEEP_SERVER -ne 0 ] ; then
+    EXIT_TRAP="$EXIT_TRAP ; kill $server_pid &> /dev/null"
+  fi
+fi
+
 #play MIDI output
 local midiFile="${lyFile%.ly}.midi"
 echo "Playing..."
-if [ $interactive -eq 0 ] ; then
-  exec $MIDI_PLAYER_INTERACTIVE "$midiFile"
-else
-  exec $MIDI_PLAYER_NON_INTERACTIVE "$midiFile"
-fi
+#NOTE: we cannot use exec as that would remove existing EXIT traps
+"$MIDI2DEV" --loop -c "$SCRIPT_NAME" -f "$midiFile" -a "$MIDI_API" -o "$MIDI_SERVER_PORT" > /dev/null &
+wait $!
 }
 
 main "$@"

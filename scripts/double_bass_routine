@@ -22,6 +22,9 @@ SCRIPT_NAME="${BASH_SOURCE[0]##*/}"
 LY_DIR="$SCRIPT_DIR/../ly"
 KLICKLY="$SCRIPT_DIR/../klickly"
 
+#kill all background jobs on exit
+trap 'kill $(jobs -p) ; wait' EXIT
+
 [[ "$1" == "help" ]] && usage
 bpm="${1:-80}"
 duration="${2:-60}" #in seconds

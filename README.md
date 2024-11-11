@@ -14,7 +14,7 @@ A command-line metronome using [lilypond](https://lilypond.org/) snippets to sup
 
 ## Installation
 
-1. Install the dependencies, namely [lilypond](https://lilypond.org/) and (optional, but recommended) [fzf](https://github.com/junegunn/fzf/), e.g. on debian-based systems via `apt install lilypond fzf`.
+1. Install the dependencies, namely [lilypond](https://lilypond.org/), [mido](https://github.com/mido/mido), [rtmidi](https://github.com/SpotlightKid/python-rtmidi) and (optional, but recommended) [fzf](https://github.com/junegunn/fzf/), e.g. on debian-based systems via `apt install lilypond python3-mido python3-rtmidi fzf`.
 2. Install a MIDI synthesizer and a sound font of your choice (e.g. `fluid-soundfont-gm`). The default configuration expects [timidity](https://timidity.sourceforge.net/), which can e.g. be installed on debian-based systems via `apt install timidity`.
 3. Download this repository with `git clone https://github.com/3hhh/klickly.git` or your browser and copy it to dom0.
 4. Move the repository to a directory of your liking.
