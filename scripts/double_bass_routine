@@ -23,7 +23,7 @@ LY_DIR="$SCRIPT_DIR/../ly"
 KLICKLY="$SCRIPT_DIR/../klickly"
 
 #kill all background jobs on exit
-trap 'kill $(jobs -p) ; wait' EXIT
+trap 'kill $(jobs -p) &> /dev/null ; wait' EXIT
 
 [[ "$1" == "help" ]] && usage
 bpm="${1:-80}"
