@@ -1,0 +1,3 @@
+[submodule "timidity/timidityplusplus"]
+	path = timidity/timidityplusplus
+	url = https://gitlab.archlinux.org/archlinux/packaging/packages/timidityplusplus
