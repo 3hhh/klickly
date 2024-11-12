@@ -8,6 +8,8 @@
 
 set -o pipefail
 
+set -m #ignore Ctrl-C for spawned child processes
+
 #error [msg]
 function error {
 echo "$1" >&2
@@ -31,7 +33,7 @@ COMMON_DIR="$LY_DIR/common"
 REPEATS=1
 
 #set exit trap
-EXIT_TRAP='kill $(jobs -p) &> /dev/null ; wait' #kill any existing background jobs (necessary as bash doesn't pass SIGINT to child processes by default)
+EXIT_TRAP=':'
 trap 'eval $EXIT_TRAP' EXIT
 
 function usage {
@@ -290,12 +292,9 @@ fi
 #start MIDI server, if necessary
 if [ -n "$MIDI_SERVER" ] && ! is_server_running ; then
   echo "Starting MIDI server: $MIDI_SERVER"
-  (
-    [ $KEEP_SERVER -eq 0 ] && set -m #ignore Ctrl-C
-    $MIDI_SERVER &> /dev/null < /dev/null
-  ) &
-  server_pid=$!
+  $MIDI_SERVER &> /dev/null < /dev/null &
   disown
+  server_pid=$!
 
   #wait for the server to come up
   sleep $MIDI_SERVER_WAIT
@@ -310,6 +309,7 @@ local midiFile="${lyFile%.ly}.midi"
 echo "Playing..."
 #NOTE: we cannot use exec as that would remove existing EXIT traps
 "$MIDI2DEV" --loop -c "$SCRIPT_NAME" -f "$midiFile" -a "$MIDI_API" -o "$MIDI_SERVER_PORT" > /dev/null &
+EXIT_TRAP="$EXIT_TRAP ; kill $! &> /dev/null"
 wait $!
 }
 
