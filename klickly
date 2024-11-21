@@ -294,14 +294,13 @@ if [ -n "$MIDI_SERVER" ] && ! is_server_running ; then
   echo "Starting MIDI server: $MIDI_SERVER"
   $MIDI_SERVER &> /dev/null < /dev/null &
   disown
-  server_pid=$!
+
+  if [ $KEEP_SERVER -ne 0 ] ; then
+    EXIT_TRAP="$EXIT_TRAP ; kill $! &> /dev/null"
+  fi
 
   #wait for the server to come up
   sleep $MIDI_SERVER_WAIT
-
-  if [ $KEEP_SERVER -ne 0 ] ; then
-    EXIT_TRAP="$EXIT_TRAP ; kill $server_pid &> /dev/null"
-  fi
 fi
 
 #play MIDI output

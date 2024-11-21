@@ -71,3 +71,4 @@ done
 
 # 6. System endurance
 click "$bpm" "System Endurance"
+wait
