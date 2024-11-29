@@ -24,12 +24,15 @@
 
 import argparse
 import sys
+import signal
 import rtmidi # rtmidi doc: https://spotlightkid.github.io/python-rtmidi/rtmidi.html
+import mido
 from mido import MidiFile # mido doc: https://mido.readthedocs.io/en/stable - mido is just used to read the file; otherwise rtmidi is used
 from rtmidi.midiutil import list_output_ports
 from rtmidi.midiutil import open_midiport
 
 ARGS = None
+MIDIOUT = None
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Play a MIDI file on a MIDI device.')
@@ -82,24 +85,44 @@ def play(midiout):
         midiout.send_message(msg.bytes())
         debug(msg)
 
+def cleanup():
+    global MIDIOUT
+    if MIDIOUT:
+        # reset the controller so that future playbacks aren't affected
+        # by previously sent MIDI messages
+        for msg in mido.ports.panic_messages():
+            MIDIOUT.send_message(msg.bytes())
+        MIDIOUT = None
+
+def exit_handler(signum, frame):
+    cleanup()
+    sys.exit(1)
+
+def register_exit_handler():
+    signal.signal(signal.SIGINT, exit_handler)
+    signal.signal(signal.SIGTERM, exit_handler)
+    signal.signal(signal.SIGPIPE, exit_handler)
+    signal.signal(signal.SIGABRT, exit_handler)
+
 def main():
     global ARGS
+    global MIDIOUT
     ARGS = parse_args()
 
     if ARGS.list:
         print_info()
         return
 
-    midiout = None
+    register_exit_handler()
+
     try:
-        midiout, midiout_port = open_midiport(port=ARGS.output, type_='output', client_name=ARGS.client, api=ARGS.api, port_name='output', use_virtual=ARGS.output is None)
+        MIDIOUT, midiout_port = open_midiport(port=ARGS.output, type_='output', client_name=ARGS.client, api=ARGS.api, port_name='output', use_virtual=ARGS.output is None)
         while True:
-            play(midiout)
+            play(MIDIOUT)
             if not ARGS.loop:
                 break
     finally:
-        if midiout:
-            del midiout
+        cleanup()
 
 if __name__ == '__main__':
     sys.exit(main())
