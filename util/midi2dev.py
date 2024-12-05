@@ -92,6 +92,7 @@ def cleanup():
         # by previously sent MIDI messages
         for msg in mido.ports.panic_messages():
             MIDIOUT.send_message(msg.bytes())
+        del MIDIOUT
         MIDIOUT = None
 
 def exit_handler(signum, frame):
