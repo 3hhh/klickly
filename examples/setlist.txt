@@ -1,0 +1,20 @@
+# A setlist example for use with klickly in setlist mode: `./klickly setlist examples/setlist.txt`
+# Lines starting with # are ignored.
+
+# Explanation:
+# title: Optional track title, which will be speech syntesized before the click track is played. Not specifying a title will skip the announcement.
+# tempo: The tempo at which klickly will play the file. See the klickly help on regular mode for further details.
+# file: The lilypond file to play as click track for the track. If specified as fuzzy path, the _first_ matching path will be used without any user interaction.
+title: Eagles - Hotel California
+tempo: 73
+file:  4-4/16th
+
+# The next track must be separated from a previous one by at least one empty line.
+title: Blur - Song 2
+tempo: 130 
+file:  4-4/8th
+
+title: Metallica - Master of puppets  
+tempo: 212
+# Master of puppets switches between 4/4 and 3/4 time signature from time to time. Therefore a click without accentuation is used. Alternatively one could write an entire click track for the song.
+file:  1-1/8th

@@ -4,7 +4,7 @@
 #
 # See `usage()` for further details.
 #
-# Copyright (C) 2024  David Hobach  GPLv3
+# Copyright (C) 2025  David Hobach  GPLv3
 
 set -o pipefail
 
@@ -12,7 +12,7 @@ set -m #ignore Ctrl-C for spawned child processes
 
 #error [msg]
 function error {
-echo "$1" >&2
+echo "ERROR: $1" >&2
 exit 1
 }
 
@@ -31,6 +31,9 @@ MIDI2DEV="$SCRIPT_DIR/util/midi2dev.py"
 COMMON_DIR="$LY_DIR/common"
 [ -f "/etc/$SCRIPT_NAME.conf" ] && CONF="/etc/$SCRIPT_NAME.conf" || CONF="$SCRIPT_DIR/$SCRIPT_NAME.conf"
 REPEATS=1
+declare -A SETLIST
+SETLIST_LENGTH=0 #number of items in the setlist
+SETLIST_PROCESS= #pid of the last spawned background process
 
 #set exit trap
 EXIT_TRAP=':'
@@ -38,6 +41,7 @@ trap 'eval $EXIT_TRAP' EXIT
 
 function usage {
 echo "$SCRIPT_NAME [options] [tempo] [file]
+$SCRIPT_NAME setlist [file]
 
 A command-line metronome using lilypond snippets to support arbitrary musical patterns.
 
@@ -52,9 +56,14 @@ A command-line metronome using lilypond snippets to support arbitrary musical pa
                      starts with [start] bpm again. If prefixed with a minus sign, the tempo
                      will slowly decrease by [increase] bpms until it reaches [start].
 
-[file]:  Full path to the lilypond file to use as metronome. Check the ly folder for the
-         currently available patterns. Can be left out or specified as fuzzy path, if fzf
-         is installed.
+[file]:  regular mode:
+           Full path to the lilypond file to use as metronome. Check the ly folder for the
+           currently available patterns. Can be left out or specified as fuzzy path, if fzf
+           is installed.
+         setlist mode:
+           Full path to a setlist text file to play through. See the examples directory for
+           the expected syntax. Use the navigation keys (arrow keys by default) to switch
+           to the next or previous song.
 
 [options]:
   -i    Force interactive mode (default, if a terminal appears to be connected).
@@ -118,11 +127,13 @@ fi
 
 #whether or not $MIDI_SERVER is already running
 function is_server_running {
-  local server="${MIDI_SERVER%% *}"
-  pgrep -f "$server" > /dev/null
+local server="${MIDI_SERVER%% *}"
+pgrep -f "$server" > /dev/null
 }
 
-function main {
+#run "$@"
+#Run in regular mode.
+function run {
 #set defaults
 local interactive=0
 [ -t 0 ] || interactive=1
@@ -153,15 +164,6 @@ while : ; do
 
   shift
 done
-
-[ $# -lt 1 ] && usage
-
-deps "mktemp" "lilypond" "find" "sort" "cat" "readlink" "pgrep"
-
-#load config
-[ -f "$CONF" ] || error "The configuration file at $CONF does not exist."
-source "$CONF"
-deps "${MIDI_SERVER%% *}"
 
 #parse args
 local tempo="$1"
@@ -218,10 +220,15 @@ if [ ! -f "$lyFile" ] ; then
     local last="$(cat "$LAST" 2> /dev/null)"
     [ -f "$last" ] && lyFile="$last"
   fi
-  if [ $interactive -eq 0 ] && command -v "fzf" &> /dev/null ; then
+  if command -v "fzf" &> /dev/null ; then
     lyFile="${lyFile##$LY_DIR/}"
     lyFile="${lyFile%.ly}"
-    lyFile="$(find "$LY_DIR" -name '*.ly' -not -path "*/common/*" | sort | fzf $FZF_OPTS -q "$lyFile")" || error "Failed to execute fzf."
+    if [ $interactive -eq 0 ] ; then
+      lyFile="$(find "$LY_DIR" -name '*.ly' -not -path "*/common/*" | sort | fzf $FZF_OPTS -q "$lyFile")" || error "Failed to execute fzf. Exit code: $?"
+    else
+      lyFile="$(find "$LY_DIR" -name '*.ly' -not -path "*/common/*" | sort | fzf $FZF_OPTS -f "$lyFile")" || error "Failed to execute fzf. Exit code: $?"
+      IFS= read -r lyFile <<< "$lyFile" #use first match
+    fi
     echo "$lyFile"
   fi
 fi
@@ -310,6 +317,145 @@ echo "Playing..."
 "$MIDI2DEV" --loop -c "$SCRIPT_NAME" -f "$midiFile" -a "$MIDI_API" -o "$MIDI_SERVER_PORT" > /dev/null &
 EXIT_TRAP="$EXIT_TRAP ; kill $! &> /dev/null"
 wait $!
+}
+
+function addToSetlist {
+local title="$1"
+local tempo"$2"
+local file="$3"
+
+[ -z "$title" ] && [ -z "$tempo" ] && [ -z "$file" ] && return 1
+[ -z "$tempo" ] && error "Missing tempo for title: $title, file: $file."
+[ -z "$file" ] && error "Missing file for title: $title, tempo: $tempo."
+
+SETLIST["${SETLIST_LENGTH}_title"]="$title"
+SETLIST["${SETLIST_LENGTH}_tempo"]="$tempo"
+SETLIST["${SETLIST_LENGTH}_file"]="$file"
+
+SETLIST_LENGTH=$(( $SETLIST_LENGTH + 1 ))
+}
+
+function readSetlist {
+local setlist="$1"
+local line=
+local commentRegex='^#.*$'
+local valueRegex='^(title|tempo|file):[[:space:]]*(.*[^[:space:]]+)[[:space:]]*$'
+local decimalRegex="^[0-9]+$"
+local title=""
+local tempo=""
+local file=""
+
+while IFS= read -r line || [ -n "$line" ] ; do
+  if [[ "$line" =~ $commentRegex ]] ; then
+    continue
+  elif [ -z "$line" ] ; then
+    addToSetlist "$title" "$tempo" "$file" || continue
+
+    #reset
+    title=""
+    tempo=""
+    file=""
+  elif [[ "$line" =~ $valueRegex ]] ; then
+    local name="${BASH_REMATCH[1]}"
+    local value="${BASH_REMATCH[2]}"
+    if [[ "$name" == "title" ]] ; then
+      title="$value"
+    elif [[ "$name" == "tempo" ]] ; then
+      tempo="$value"
+      [[ $tempo =~ $decimalRegex ]] || error "Non-decimal tempo: $tempo"
+    elif [[ "$name" == "file" ]] ; then
+      file="$value"
+    else
+      error "Invalid name: $name - Programming error?!"
+    fi
+  else
+    error "Invalid line in $setlist: $line"
+  fi
+done < "$setlist"
+
+#add last, if necessary (EOF was reached)
+addToSetlist "$title" "$tempo" "$file"
+
+[ ${#SETLIST[@]} -gt 0 ] || error "The setlist appears to be empty or could not be read."
+
+[ $DEBUG -eq 0 ] && declare -p SETLIST
+return 0
+}
+
+#playSetlist [index]
+function playSetlist {
+local index="$1"
+[ $index -ge $SETLIST_LENGTH ] && error "Incorrect index @playSetlist. Programming error?!"
+[ $index -lt 0 ] && error "Incorrect index @playSetlist. Programming error?!"
+
+local title="${SETLIST["${index}_title"]}"
+local tempo="${SETLIST["${index}_tempo"]}"
+local file="${SETLIST["${index}_file"]}"
+
+#terminate the last playback
+[ -n "$SETLIST_PROCESS" ] && kill "$SETLIST_PROCESS"
+
+#text to speech synth and the run are executed in a subshell in order not to block user input
+(
+  if [ -n "$title" ] ; then
+    echo ""
+    echo "$title"
+    #NOTE: we deliberately do not check whether the program is installed - if it's not, it will print an error to the user
+    [ -n "$TEXT_TO_SPEECH" ] && $TEXT_TO_SPEECH <<< "$title"
+  fi
+
+  #exit traps are not inherited to subshells, so we need to initialize it again
+  EXIT_TRAP=':'
+  trap 'eval $EXIT_TRAP' EXIT
+
+  run -n "$tempo" "$file" < /dev/null
+) &
+disown
+SETLIST_PROCESS=$!
+}
+
+function main {
+[ $# -lt 1 ] && usage
+
+deps "mktemp" "lilypond" "find" "sort" "cat" "readlink" "pgrep"
+
+#load config
+[ -f "$CONF" ] || error "The configuration file at $CONF does not exist."
+source "$CONF"
+deps "${MIDI_SERVER%% *}"
+
+if [[ "$1" == "setlist" ]] ; then
+  #setlist mode
+  [ $# -eq 2 ] || usage
+  [ ${#SETLIST_KEY_NEXT} -eq ${#SETLIST_KEY_PREVIOUS} ] || error "The SETLIST_KEYS_NEXT and SETLIST_KEY_PREVIOUS configuration options must have identical length."
+  readSetlist "$2"
+
+  #make sure processes spawned via playSetlist are killed
+  EXIT_TRAP="$EXIT_TRAP ; eval 'kill \$SETLIST_PROCESS &> /dev/null'"
+
+  local cur=0 #index of the currently played title
+  playSetlist "$cur"
+
+  local char=
+  while read -rs -N${#SETLIST_KEY_NEXT} char ; do
+    [ $DEBUG -eq 0 ] && debug "$(declare -p char)"
+    if [[ "$char" == "$SETLIST_KEY_NEXT" ]] ; then
+      [ $(( $cur +1 )) -lt $SETLIST_LENGTH ] || continue
+      cur=$(( $cur +1 ))
+      playSetlist "$cur"
+    elif [[ "$char" == "$SETLIST_KEY_PREVIOUS" ]] ; then
+      [ $cur -eq 0 ] && continue
+      cur=$(( $cur -1 ))
+      playSetlist "$cur"
+    else
+      continue
+    fi
+    [ $DEBUG -eq 0 ] && debug "cur: $cur"
+  done
+else
+  #regular mode
+  run "$@"
+fi
 }
 
 main "$@"

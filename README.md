@@ -9,12 +9,13 @@ A command-line metronome using [lilypond](https://lilypond.org/) snippets to sup
 - option to dynamically increase the tempo
 - highly configurable
 - common metronome patterns included
+- mode to play a predefined setlist
 - [scriptable](https://github.com/3hhh/klickly/tree/master/scripts)
 - MIDI output
 
 ## Installation
 
-1. Install the dependencies, namely [lilypond](https://lilypond.org/), [mido](https://github.com/mido/mido), [rtmidi](https://github.com/SpotlightKid/python-rtmidi) and (optional, but recommended) [fzf](https://github.com/junegunn/fzf/), e.g. on debian-based systems via `apt install lilypond python3-mido python3-rtmidi fzf`.
+1. Install the dependencies, namely [lilypond](https://lilypond.org/), [mido](https://github.com/mido/mido), [rtmidi](https://github.com/SpotlightKid/python-rtmidi), [fzf](https://github.com/junegunn/fzf/) and [espeak-ng](https://github.com/espeak-ng/espeak-ng) (fzf and espeak-ng are optional, but recommended), e.g. on debian-based systems via `apt install lilypond python3-mido python3-rtmidi fzf espeak-ng`.
 2. Install a MIDI synthesizer and a sound font of your choice (e.g. `fluid-soundfont-gm`). The default configuration expects [timidity](https://timidity.sourceforge.net/), which can e.g. be installed on debian-based systems via `apt install timidity`.  
 If you need `timidity` with jack support, it is recommended to build it from source with the patches included in this repository (see below).  
 Alternatively you can also use a DAW of your choice (e.g. [ardour](https://manual.ardour.org/plugins-instruments/)) to synthesize the MIDI klick. Adjust the [configuration](./klickly.conf) accordingly.
@@ -51,7 +52,7 @@ Execute `klickly` without arguments on the command-line to obtain an overview of
 
 ## Copyright
 
-© 2024 David Hobach
+© 2025 David Hobach
 GPLv3
 
 See `LICENSE` for details.
