@@ -1,11 +1,11 @@
 # klickly
 
-A command-line metronome using [lilypond](https://lilypond.org/) snippets to support arbitrary musical patterns.
+A command-line metronome using [lilypond](https://lilypond.org/) snippets to support arbitrary rhythmic patterns.
 
 ## Features
 
 - loops [lilypond](https://lilypond.org/) snippets infinitely at the tempo given on the command-line
-- arbitrary musical patterns can be used as loops
+- arbitrary rhythmic patterns can be used as loops
 - option to dynamically increase the tempo
 - highly configurable
 - common metronome patterns included
