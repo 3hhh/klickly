@@ -44,6 +44,10 @@ sudo make install
 
 Execute `klickly` without arguments on the command-line to obtain an overview of its capabilities.
 
+### Check your tempo
+
+You can add the [xtalk time plugin](https://github.com/3hhh/xtalk/blob/master/plugins/time.py) to check your tempo against the click produced by `klickly` in real-time whilst performing.
+
 ## Uninstall
 
 1. Remove all symlinks that you created during the installation.
