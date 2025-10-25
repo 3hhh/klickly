@@ -1,0 +1,17 @@
+// https://sfzformat.com/
+
+// path where to find the samples, if relative paths are used --> set the correct path here!
+// - by default the sfz file path is used as relative file path, but the file is moved by ardour --> cannot be used
+// - we use ../ to bypass [a bug](https://github.com/swesterfeld/liquidsfz/issues/48) in liquidsfz (it also adds the path of the sfz file)
+<control>default_path=../../../../../../../../../../../../home/user/edrum/klickly/trunk/sfz/samples/
+
+<global>loop_mode=one_shot
+
+// pitch modulated click for the metronome (klickly uses 72, 84 and 96)
+// volume increases the volume by the specified dB
+<region>lokey=50 hikey=100 pitch_keycenter=96 sample=654411__krokulator__select2.wav volume=10
+
+// error notes used by the [xtalk time plugin](https://github.com/3hhh/xtalk/blob/master/plugins/time.py)
+// 1 = too early, 2 = too late
+<region>key=1 sample=53387__dodgy-c__dodgy_c_wood_block.wav volume=10
+<region>key=2 sample=517872__zovipoland__perfect-wooden-snare.wav volume=10
