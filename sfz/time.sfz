@@ -3,7 +3,7 @@
 // path where to find the samples, if relative paths are used --> set the correct path here!
 // - by default the sfz file path is used as relative file path, but the file is moved by ardour --> cannot be used
 // - we use ../ to bypass [a bug](https://github.com/swesterfeld/liquidsfz/issues/48) in liquidsfz (it also adds the path of the sfz file)
-<control>default_path=../../../../../../../../../../../../home/user/edrum/klickly/trunk/sfz/samples/
+<control>default_path=../../../../../../../../../../../../home/user/klickly/trunk/sfz/samples/
 
 <global>loop_mode=one_shot
 
