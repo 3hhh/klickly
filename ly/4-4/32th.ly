@@ -2,7 +2,7 @@
 
 myMusic = {
     \accP32 \repeat unfold 7 { \reg32 }
-    \repeat unfold 3 { 
+    \repeat unfold 3 {
         \accS32 \repeat unfold 7 { \reg32 }
     }
 }
