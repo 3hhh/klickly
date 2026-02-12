@@ -14,6 +14,8 @@ title: Blur - Song 2
 tempo: 130 
 file:  4-4/8th
 
+pause
+
 title: Metallica - Master of puppets  
 tempo: 212
 # Master of puppets switches between 4/4 and 3/4 time signature from time to time. Therefore a click without accentuation is used. Alternatively one could write an entire click track for the song.

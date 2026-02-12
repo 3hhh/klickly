@@ -57,7 +57,7 @@ You can add the [xtalk time plugin](https://github.com/3hhh/xtalk/blob/master/pl
 
 ## Copyright
 
-© 2025 David Hobach
+© 2026 David Hobach
 GPLv3
 
 See `LICENSE` for details.
