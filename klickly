@@ -408,7 +408,7 @@ local file="${SETLIST["${index}_file"]}"
     echo ""
     echo "$title"
     #NOTE: we deliberately do not check whether the program is installed - if it's not, it will print an error to the user
-    [ -n "$TEXT_TO_SPEECH" ] && $TEXT_TO_SPEECH <<< "$title"
+    [ -n "$TEXT_TO_SPEECH" ] && eval "$TEXT_TO_SPEECH" <<< "$title"
   fi
 
   #exit traps are not inherited to subshells, so we need to initialize it again
