@@ -41,9 +41,7 @@ function click {
 
   echo ""
   echo "$msg (${duration}s)"
-  $KLICKLY -n "$bpm" "$pattern" &
-  sleep "$duration"
-  kill "$!"
+  $KLICKLY -n --duration "$duration" "$bpm" "$pattern"
 }
 
 echo "Running at $bpm bpm..."

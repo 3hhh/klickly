@@ -41,6 +41,7 @@ def parse_args():
     parser.add_argument('-a', '--api', default='default', choices=['jack', 'alsa', 'default'], help='MIDI API to use. Use default on non-Linux devices. (default: %(default)s)')
     parser.add_argument('-c', '--client', default='midi2dev', help='Name of the MIDI client to use. (default: %(default)s)')
     parser.add_argument('--loop', action='store_true', help='Loop the MIDI playback.')
+    parser.add_argument('--duration', type=int, help='Time in seconds after which to terminate playback (default: as long as it takes).')
     parser.add_argument('--list', action='store_true', help='Just list the available APIs and their MIDI ports.')
     parser.add_argument('--debug', action='store_true', help='Print debug output.')
     args = parser.parse_args()
@@ -96,10 +97,16 @@ def cleanup():
         MIDIOUT = None
 
 def exit_handler(signum, frame):
+    ecode = 1
+    if signum == signal.SIGALRM:
+        #controlled alarm --> all good
+        ecode = 0
+
     cleanup()
-    sys.exit(1)
+    sys.exit(ecode)
 
 def register_exit_handler():
+    signal.signal(signal.SIGALRM, exit_handler)
     signal.signal(signal.SIGINT, exit_handler)
     signal.signal(signal.SIGTERM, exit_handler)
     signal.signal(signal.SIGPIPE, exit_handler)
@@ -118,6 +125,10 @@ def main():
 
     try:
         MIDIOUT, midiout_port = open_midiport(port=ARGS.output, type_='output', client_name=ARGS.client, api=ARGS.api, port_name='output', use_virtual=ARGS.output is None)
+
+        if ARGS.duration:
+            signal.alarm(ARGS.duration)
+
         while True:
             play(MIDIOUT)
             if not ARGS.loop:
