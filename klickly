@@ -69,6 +69,10 @@ A command-line metronome using lilypond snippets to support arbitrary musical pa
   -i             Force interactive mode (default, if a terminal appears to be connected).
   -n             Force non-interactive mode (default, if no terminal appears to be connected).
   --duration [s] Time in seconds after which to abort playing the pattern (default: forever).
+  --eval [code]  Execute the given bash code after reading the configuration. This is useful
+                 to change configuration settings on the fly.
+                 For example it can be used to set the loops variable found in some lilypond
+                 snippets via --eval 'RAW_VARS=\"loops=2\"'.
 
 Further configuration options are available at $CONF."
 exit 1
@@ -135,6 +139,8 @@ pgrep -f "$server" > /dev/null
 #run "$@"
 #Run in regular mode.
 function run {
+[ $DEBUG -eq 0 ] && debug "$SCRIPT_NAME $*"
+
 #set defaults
 local interactive=0
 [ -t 0 ] || interactive=1
@@ -157,9 +163,14 @@ while : ; do
       interactive=0
       ;;
     "--duration")
-      [ $# -gt 1 ] || error "Missing seconds argument for the --duration option."
+      [ $# -gt 1 ] || error "Missing argument for the --duration option."
       duration="$2"
       [[ "$duration" =~ $reDuration ]] || error "Invalid --duration seconds argument: $duration"
+      shift
+      ;;
+    "--eval")
+      [ $# -gt 1 ] || error "Missing argument for the --eval option."
+      eval "$2"
       shift
       ;;
     "--")
@@ -336,16 +347,18 @@ local title="$1"
 local tempo="$2"
 local file="$3"
 local duration="$4"
+local evals="$5"
 
 [ -z "$title" ] && [ -z "$tempo" ] && [ -z "$file" ] && return 1
 [ -z "$tempo" ] && error "Missing tempo for title: $title, file: $file."
 [ -z "$file" ] && error "Missing file for title: $title, tempo: $tempo."
-#title & duration are optional
+#title, duration & evals are optional
 
 SETLIST["${SETLIST_LENGTH}_title"]="$title"
 SETLIST["${SETLIST_LENGTH}_tempo"]="$tempo"
 SETLIST["${SETLIST_LENGTH}_file"]="$file"
 SETLIST["${SETLIST_LENGTH}_duration"]="$duration"
+SETLIST["${SETLIST_LENGTH}_evals"]="$evals"
 
 SETLIST_LENGTH=$(( $SETLIST_LENGTH + 1 ))
 }
@@ -354,32 +367,35 @@ function readSetlist {
 local setlist="$1"
 local line=
 local commentRegex='^#.*$'
-local valueRegex='^(title|tempo|file|duration):[[:space:]]*(.*[^[:space:]]+)[[:space:]]*$'
+local valueRegex='^(title|tempo|file|duration|eval):[[:space:]]*(.*[^[:space:]]+)[[:space:]]*$'
 local decimalRegex="^[0-9]+$"
 local title=""
 local tempo=""
 local duration=""
 local file=""
+local evals=""
 
 while IFS= read -r line || [ -n "$line" ] ; do
   if [[ "$line" =~ $commentRegex ]] ; then
     continue
   elif [ "$line" == "pause" ] ; then
-    addToSetlist "$PAUSE_TITLE" "1" "$PAUSE_FILE" "" || continue
+    addToSetlist "$PAUSE_TITLE" "1" "$PAUSE_FILE" "" "" || continue
 
     #reset
     title=""
     tempo=""
     file=""
     duration=""
+    evals=""
   elif [ -z "$line" ] ; then
-    addToSetlist "$title" "$tempo" "$file" "$duration" || continue
+    addToSetlist "$title" "$tempo" "$file" "$duration" "$evals" || continue
 
     #reset
     title=""
     tempo=""
     file=""
     duration=""
+    evals=""
   elif [[ "$line" =~ $valueRegex ]] ; then
     local name="${BASH_REMATCH[1]}"
     local value="${BASH_REMATCH[2]}"
@@ -393,6 +409,8 @@ while IFS= read -r line || [ -n "$line" ] ; do
       [[ "$duration" =~ $decimalRegex ]] || error "Non-decimal duration: $duration"
     elif [[ "$name" == "file" ]] ; then
       file="$value"
+    elif [[ "$name" == "eval" ]] ; then
+      evals="$value"
     else
       error "Invalid name: $name - Programming error?!"
     fi
@@ -402,7 +420,7 @@ while IFS= read -r line || [ -n "$line" ] ; do
 done < "$setlist"
 
 #add last, if necessary (EOF was reached)
-addToSetlist "$title" "$tempo" "$file" "$duration"
+addToSetlist "$title" "$tempo" "$file" "$duration" "$evals"
 
 [ ${#SETLIST[@]} -gt 0 ] || error "The setlist appears to be empty or could not be read."
 
@@ -420,6 +438,7 @@ local title="${SETLIST["${index}_title"]}"
 local tempo="${SETLIST["${index}_tempo"]}"
 local file="${SETLIST["${index}_file"]}"
 local duration="${SETLIST["${index}_duration"]}"
+local evals="${SETLIST["${index}_evals"]}"
 
 #terminate the last playback (process may not exist anymore, if duration was used)
 [ -n "$SETLIST_PROCESS" ] && kill "$SETLIST_PROCESS" 2> /dev/null
@@ -438,8 +457,11 @@ local duration="${SETLIST["${index}_duration"]}"
   trap 'eval $EXIT_TRAP' EXIT
 
   local add=""
-  [ -n "$duration" ] && add="--duration $duration"
-  run -n $add "$tempo" "$file" < /dev/null
+  [ -n "$duration" ] && printf -v add '%s --duration %q' "$add" "$duration"
+  [ -n "$evals" ] && printf -v add '%s --eval %q' "$add" "$evals"
+  local cmd=""
+  printf -v cmd "run -n %s %q %q" "$add" "$tempo" "$file"
+  eval "$cmd" < /dev/null
 ) &
 disown
 SETLIST_PROCESS=$!
