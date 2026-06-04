@@ -23,6 +23,7 @@
 #
 
 import argparse
+import time
 import sys
 import signal
 import rtmidi # rtmidi doc: https://spotlightkid.github.io/python-rtmidi/rtmidi.html
@@ -33,6 +34,7 @@ from rtmidi.midiutil import open_midiport
 
 ARGS = None
 MIDIOUT = None
+START_TIME = None
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Play a MIDI file on a MIDI device.')
@@ -42,6 +44,7 @@ def parse_args():
     parser.add_argument('-c', '--client', default='midi2dev', help='Name of the MIDI client to use. (default: %(default)s)')
     parser.add_argument('--loop', action='store_true', help='Loop the MIDI playback.')
     parser.add_argument('--duration', type=int, help='Time in seconds after which to terminate playback (default: as long as it takes).')
+    parser.add_argument('--equalize', type=int, nargs=2, metavar=("DURATION", "NOTE") , help='After the given duration in seconds, replace all incoming MIDI notes with the given note.')
     parser.add_argument('--list', action='store_true', help='Just list the available APIs and their MIDI ports.')
     parser.add_argument('--debug', action='store_true', help='Print debug output.')
     args = parser.parse_args()
@@ -51,6 +54,11 @@ def parse_args():
 
     if args.file:
         args.file = MidiFile(args.file)
+
+    if args.equalize:
+        duration, note = args.equalize
+        if duration < 0 or note > 127 or note < 0:
+            raise ValueError('Invalid duration or note specified for --equalize.')
 
     args.api = find_api(args.api)
 
@@ -82,7 +90,14 @@ def print_info():
 
 def play(midiout):
     print('length: {:.2f}s'.format(ARGS.file.length))
+
     for msg in ARGS.file.play():
+        if ARGS.equalize:
+            runtime = int(time.monotonic()) - START_TIME
+            equalize_after, equalize_note = ARGS.equalize
+            if runtime >= equalize_after and msg.note:
+                msg.note = equalize_note
+
         midiout.send_message(msg.bytes())
         debug(msg)
 
@@ -115,6 +130,7 @@ def register_exit_handler():
 def main():
     global ARGS
     global MIDIOUT
+    global START_TIME
     ARGS = parse_args()
 
     if ARGS.list:
@@ -128,6 +144,8 @@ def main():
 
         if ARGS.duration:
             signal.alarm(ARGS.duration)
+
+        START_TIME = int(time.monotonic())
 
         while True:
             play(MIDIOUT)

@@ -20,5 +20,6 @@ duration: 10
 
 title: Metallica - Master of puppets  
 tempo: 212
-# Master of puppets switches between 4/4 and 3/4 time signature from time to time. Therefore a click without accentuation is used. Alternatively one could write an entire click track for the song or use the duration option to only play the first few seconds.
-file:  1-1/8th
+# Master of puppets switches between 4/4 and 3/4 time signature from time to time. Therefore a click without accentuation is used after 10s. Alternatively one could write an entire click track for the song or use the duration option to only play the first few seconds.
+file:  4-4/8th
+equalize: 10

@@ -69,6 +69,8 @@ A command-line metronome using lilypond snippets to support arbitrary musical pa
   -i             Force interactive mode (default, if a terminal appears to be connected).
   -n             Force non-interactive mode (default, if no terminal appears to be connected).
   --duration [s] Time in seconds after which to abort playing the pattern (default: forever).
+  --equalize [s] Time in seconds after which to equalize the pattern, i.e. after which not to
+                 use accentuations anymore (default: forever).
   --eval [code]  Execute the given bash code after reading the configuration. This is useful
                  to change configuration settings on the fly.
                  For example it can be used to set the loops variable found in some lilypond
@@ -166,6 +168,12 @@ while : ; do
       [ $# -gt 1 ] || error "Missing argument for the --duration option."
       duration="$2"
       [[ "$duration" =~ $reDuration ]] || error "Invalid --duration seconds argument: $duration"
+      shift
+      ;;
+    "--equalize")
+      [ $# -gt 1 ] || error "Missing argument for the --equalize option."
+      equalize="$2"
+      [[ "$equalize" =~ $reDuration ]] || error "Invalid --equalize seconds argument: $equalize"
       shift
       ;;
     "--eval")
@@ -334,7 +342,8 @@ fi
 #play MIDI output
 local midiFile="${lyFile%.ly}.midi"
 local add=""
-[ -n "$duration" ] && add="--duration $duration"
+[ -n "$duration" ] && printf -v add '%s --duration %d' "$add" "$duration"
+[ -n "$equalize" ] && printf -v add '%s --equalize %d %d' "$add" "$equalize" "$EQUALIZE_NOTE"
 echo "Playing..."
 #NOTE: we cannot use exec as that would remove existing EXIT traps
 "$MIDI2DEV" --loop $add -c "$SCRIPT_NAME" -f "$midiFile" -a "$MIDI_API" -o "$MIDI_SERVER_PORT" > /dev/null &
@@ -347,17 +356,19 @@ local title="$1"
 local tempo="$2"
 local file="$3"
 local duration="$4"
-local evals="$5"
+local equalize="$5"
+local evals="$6"
 
 [ -z "$title" ] && [ -z "$tempo" ] && [ -z "$file" ] && return 1
 [ -z "$tempo" ] && error "Missing tempo for title: $title, file: $file."
 [ -z "$file" ] && error "Missing file for title: $title, tempo: $tempo."
-#title, duration & evals are optional
+#title, duration, equalize & evals are optional
 
 SETLIST["${SETLIST_LENGTH}_title"]="$title"
 SETLIST["${SETLIST_LENGTH}_tempo"]="$tempo"
 SETLIST["${SETLIST_LENGTH}_file"]="$file"
 SETLIST["${SETLIST_LENGTH}_duration"]="$duration"
+SETLIST["${SETLIST_LENGTH}_equalize"]="$equalize"
 SETLIST["${SETLIST_LENGTH}_evals"]="$evals"
 
 SETLIST_LENGTH=$(( $SETLIST_LENGTH + 1 ))
@@ -367,11 +378,12 @@ function readSetlist {
 local setlist="$1"
 local line=
 local commentRegex='^#.*$'
-local valueRegex='^(title|tempo|file|duration|eval):[[:space:]]*(.*[^[:space:]]+)[[:space:]]*$'
+local valueRegex='^(title|tempo|file|duration|equalize|eval):[[:space:]]*(.*[^[:space:]]+)[[:space:]]*$'
 local decimalRegex="^[0-9]+$"
 local title=""
 local tempo=""
 local duration=""
+local equalize=""
 local file=""
 local evals=""
 
@@ -379,22 +391,24 @@ while IFS= read -r line || [ -n "$line" ] ; do
   if [[ "$line" =~ $commentRegex ]] ; then
     continue
   elif [ "$line" == "pause" ] ; then
-    addToSetlist "$PAUSE_TITLE" "1" "$PAUSE_FILE" "" "" || continue
+    addToSetlist "$PAUSE_TITLE" "1" "$PAUSE_FILE" "" "" "" || continue
 
     #reset
     title=""
     tempo=""
     file=""
     duration=""
+    equalize=""
     evals=""
   elif [ -z "$line" ] ; then
-    addToSetlist "$title" "$tempo" "$file" "$duration" "$evals" || continue
+    addToSetlist "$title" "$tempo" "$file" "$duration" "$equalize" "$evals" || continue
 
     #reset
     title=""
     tempo=""
     file=""
     duration=""
+    equalize=""
     evals=""
   elif [[ "$line" =~ $valueRegex ]] ; then
     local name="${BASH_REMATCH[1]}"
@@ -403,10 +417,13 @@ while IFS= read -r line || [ -n "$line" ] ; do
       title="$value"
     elif [[ "$name" == "tempo" ]] ; then
       tempo="$value"
-      [[ "$tempo" =~ $decimalRegex ]] || error "Non-decimal tempo: $tempo"
+      [[ "$tempo" =~ $decimalRegex ]] || error "Non-decimal tempo value: $tempo"
     elif [[ "$name" == "duration" ]] ; then
       duration="$value"
-      [[ "$duration" =~ $decimalRegex ]] || error "Non-decimal duration: $duration"
+      [[ "$duration" =~ $decimalRegex ]] || error "Non-decimal duration value: $duration"
+    elif [[ "$name" == "equalize" ]] ; then
+      equalize="$value"
+      [[ "$equalize" =~ $decimalRegex ]] || error "Non-decimal equalize value: $equalize"
     elif [[ "$name" == "file" ]] ; then
       file="$value"
     elif [[ "$name" == "eval" ]] ; then
@@ -420,7 +437,7 @@ while IFS= read -r line || [ -n "$line" ] ; do
 done < "$setlist"
 
 #add last, if necessary (EOF was reached)
-addToSetlist "$title" "$tempo" "$file" "$duration" "$evals"
+addToSetlist "$title" "$tempo" "$file" "$duration" "$equalize" "$evals"
 
 [ ${#SETLIST[@]} -gt 0 ] || error "The setlist appears to be empty or could not be read."
 
@@ -438,6 +455,7 @@ local title="${SETLIST["${index}_title"]}"
 local tempo="${SETLIST["${index}_tempo"]}"
 local file="${SETLIST["${index}_file"]}"
 local duration="${SETLIST["${index}_duration"]}"
+local equalize="${SETLIST["${index}_equalize"]}"
 local evals="${SETLIST["${index}_evals"]}"
 
 #terminate the last playback (process may not exist anymore, if duration was used)
@@ -457,7 +475,8 @@ local evals="${SETLIST["${index}_evals"]}"
   trap 'eval $EXIT_TRAP' EXIT
 
   local add=""
-  [ -n "$duration" ] && printf -v add '%s --duration %q' "$add" "$duration"
+  [ -n "$duration" ] && printf -v add '%s --duration %d' "$add" "$duration"
+  [ -n "$equalize" ] && printf -v add '%s --equalize %d' "$add" "$equalize"
   [ -n "$evals" ] && printf -v add '%s --eval %q' "$add" "$evals"
   local cmd=""
   printf -v cmd "run -n %s %q %q" "$add" "$tempo" "$file"
