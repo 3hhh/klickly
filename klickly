@@ -33,6 +33,7 @@ COMMON_DIR="$LY_DIR/common"
 REPEATS=1
 declare -A SETLIST
 SETLIST_LENGTH=0 #number of items in the setlist
+SETLIST_CUR=0 #index of the currently played setlist title
 SETLIST_PROCESS= #pid of the last spawned background process
 
 #set exit trap
@@ -62,8 +63,8 @@ A command-line metronome using lilypond snippets to support arbitrary musical pa
            is installed.
          setlist mode:
            Full path to a setlist text file to play through. See the examples directory for
-           the expected syntax. Use the navigation keys (arrow keys by default) to switch
-           to the next or previous song.
+           the expected syntax. Use the navigation keys (arrow keys by default) or the SIGUSR1
+           and SIGUSR2 process signals to switch to the next/previous title.
 
 [options]:
   -i             Force interactive mode (default, if a terminal appears to be connected).
@@ -447,7 +448,7 @@ return 0
 
 #playSetlist [index]
 function playSetlist {
-local index="$1"
+local index="${1:-$SETLIST_CUR}"
 [ $index -ge $SETLIST_LENGTH ] && error "Incorrect index @playSetlist. Programming error?!"
 [ $index -lt 0 ] && error "Incorrect index @playSetlist. Programming error?!"
 
@@ -486,6 +487,18 @@ disown
 SETLIST_PROCESS=$!
 }
 
+function playSetlistNext {
+[ $(( $SETLIST_CUR +1 )) -lt $SETLIST_LENGTH ] || return
+SETLIST_CUR=$(( $SETLIST_CUR +1 ))
+playSetlist
+}
+
+function playSetlistPrevious {
+[ $SETLIST_CUR -eq 0 ] && return
+SETLIST_CUR=$(( $SETLIST_CUR -1 ))
+playSetlist
+}
+
 function main {
 [ $# -lt 1 ] && usage
 
@@ -496,6 +509,10 @@ deps "mktemp" "lilypond" "find" "sort" "cat" "readlink" "pgrep"
 source "$CONF"
 deps "${MIDI_SERVER%% *}"
 
+#generally ignore SIGUSR1/2 unless explicitly used below
+trap '' SIGUSR1
+trap '' SIGUSR2
+
 if [[ "$1" == "setlist" ]] ; then
   #setlist mode
   [ $# -eq 2 ] || usage
@@ -505,24 +522,23 @@ if [[ "$1" == "setlist" ]] ; then
   #make sure processes spawned via playSetlist are killed
   EXIT_TRAP="$EXIT_TRAP ; eval 'kill \$SETLIST_PROCESS &> /dev/null'"
 
-  local cur=0 #index of the currently played title
-  playSetlist "$cur"
+  #support next/previous signalling via process signals
+  trap 'playSetlistNext' SIGUSR1
+  trap 'playSetlistPrevious' SIGUSR2
+
+  playSetlist
 
   local char=
   while read -rs -N${#SETLIST_KEY_NEXT} char ; do
     [ $DEBUG -eq 0 ] && debug "$(declare -p char)"
     if [[ "$char" == "$SETLIST_KEY_NEXT" ]] ; then
-      [ $(( $cur +1 )) -lt $SETLIST_LENGTH ] || continue
-      cur=$(( $cur +1 ))
-      playSetlist "$cur"
+      playSetlistNext
     elif [[ "$char" == "$SETLIST_KEY_PREVIOUS" ]] ; then
-      [ $cur -eq 0 ] && continue
-      cur=$(( $cur -1 ))
-      playSetlist "$cur"
+      playSetlistPrevious
     else
       continue
     fi
-    [ $DEBUG -eq 0 ] && debug "cur: $cur"
+    [ $DEBUG -eq 0 ] && debug "SETLIST_CUR: $SETLIST_CUR"
   done
 else
   #regular mode
