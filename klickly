@@ -34,6 +34,7 @@ REPEATS=1
 declare -A SETLIST
 SETLIST_LENGTH=0 #number of items in the setlist
 SETLIST_CUR=0 #index of the currently played setlist title
+SETLIST_MIDI= #MIDI note to play on $SETLIST_MIDI_PORT during the next playSetlist() operation
 SETLIST_PROCESS= #pid of the last spawned background process
 
 #set exit trap
@@ -359,11 +360,12 @@ local file="$3"
 local duration="$4"
 local equalize="$5"
 local evals="$6"
+local midi="$7"
 
 [ -z "$title" ] && [ -z "$tempo" ] && [ -z "$file" ] && return 1
 [ -z "$tempo" ] && error "Missing tempo for title: $title, file: $file."
 [ -z "$file" ] && error "Missing file for title: $title, tempo: $tempo."
-#title, duration, equalize & evals are optional
+#title, duration, equalize, evals, midi are optional
 
 SETLIST["${SETLIST_LENGTH}_title"]="$title"
 SETLIST["${SETLIST_LENGTH}_tempo"]="$tempo"
@@ -371,6 +373,7 @@ SETLIST["${SETLIST_LENGTH}_file"]="$file"
 SETLIST["${SETLIST_LENGTH}_duration"]="$duration"
 SETLIST["${SETLIST_LENGTH}_equalize"]="$equalize"
 SETLIST["${SETLIST_LENGTH}_evals"]="$evals"
+SETLIST["${SETLIST_LENGTH}_midi"]="$midi"
 
 SETLIST_LENGTH=$(( $SETLIST_LENGTH + 1 ))
 }
@@ -379,7 +382,7 @@ function readSetlist {
 local setlist="$1"
 local line=
 local commentRegex='^#.*$'
-local valueRegex='^(title|tempo|file|duration|equalize|eval):[[:space:]]*(.*[^[:space:]]+)[[:space:]]*$'
+local valueRegex='^(title|tempo|file|duration|equalize|eval|midi):[[:space:]]*(.*[^[:space:]]+)[[:space:]]*$'
 local decimalRegex="^[0-9]+$"
 local title=""
 local tempo=""
@@ -387,12 +390,13 @@ local duration=""
 local equalize=""
 local file=""
 local evals=""
+local midi=""
 
 while IFS= read -r line || [ -n "$line" ] ; do
   if [[ "$line" =~ $commentRegex ]] ; then
     continue
   elif [ "$line" == "pause" ] ; then
-    addToSetlist "$PAUSE_TITLE" "1" "$PAUSE_FILE" "" "" "" || continue
+    addToSetlist "$PAUSE_TITLE" "1" "$PAUSE_FILE" "" "" "" "" || continue
 
     #reset
     title=""
@@ -401,8 +405,9 @@ while IFS= read -r line || [ -n "$line" ] ; do
     duration=""
     equalize=""
     evals=""
+    midi=""
   elif [ -z "$line" ] ; then
-    addToSetlist "$title" "$tempo" "$file" "$duration" "$equalize" "$evals" || continue
+    addToSetlist "$title" "$tempo" "$file" "$duration" "$equalize" "$evals" "$midi" || continue
 
     #reset
     title=""
@@ -411,6 +416,7 @@ while IFS= read -r line || [ -n "$line" ] ; do
     duration=""
     equalize=""
     evals=""
+    midi=""
   elif [[ "$line" =~ $valueRegex ]] ; then
     local name="${BASH_REMATCH[1]}"
     local value="${BASH_REMATCH[2]}"
@@ -429,6 +435,11 @@ while IFS= read -r line || [ -n "$line" ] ; do
       file="$value"
     elif [[ "$name" == "eval" ]] ; then
       evals="$value"
+    elif [[ "$name" == "midi" ]] ; then
+      midi="$value"
+      [[ "$midi" =~ $decimalRegex ]] || error "Non-decimal MIDI value: $midi"
+      [ $midi -lt 0 ] && error "Invalid MIDI note value: $midi"
+      [ $midi -gt 127 ] && error "Invalid MIDI note value: $midi"
     else
       error "Invalid name: $name - Programming error?!"
     fi
@@ -438,7 +449,7 @@ while IFS= read -r line || [ -n "$line" ] ; do
 done < "$setlist"
 
 #add last, if necessary (EOF was reached)
-addToSetlist "$title" "$tempo" "$file" "$duration" "$equalize" "$evals"
+addToSetlist "$title" "$tempo" "$file" "$duration" "$equalize" "$evals" "$midi"
 
 [ ${#SETLIST[@]} -gt 0 ] || error "The setlist appears to be empty or could not be read."
 
@@ -458,22 +469,38 @@ local file="${SETLIST["${index}_file"]}"
 local duration="${SETLIST["${index}_duration"]}"
 local equalize="${SETLIST["${index}_equalize"]}"
 local evals="${SETLIST["${index}_evals"]}"
+local midi="${SETLIST["${index}_midi"]}"
 
 #terminate the last playback (process may not exist anymore, if duration was used)
 [ -n "$SETLIST_PROCESS" ] && kill "$SETLIST_PROCESS" 2> /dev/null
 
 #text to speech synth and the run are executed in a subshell in order not to block user input
 (
+  #exit traps are not inherited to subshells, so we need to initialize it again
+  EXIT_TRAP=':'
+  trap 'eval $EXIT_TRAP' EXIT
+
   if [ -n "$title" ] ; then
     echo ""
     echo "$title"
     #NOTE: we deliberately do not check whether the program is installed - if it's not, it will print an error to the user
-    [ -n "$TEXT_TO_SPEECH" ] && eval "$TEXT_TO_SPEECH" <<< "$title"
+    if [ -n "$TEXT_TO_SPEECH" ] ; then
+      eval "$TEXT_TO_SPEECH" <<< "$title" &
+      EXIT_TRAP="$EXIT_TRAP ; kill $! &> /dev/null"
+    fi
   fi
 
-  #exit traps are not inherited to subshells, so we need to initialize it again
-  EXIT_TRAP=':'
-  trap 'eval $EXIT_TRAP' EXIT
+  if [ -n "$SETLIST_MIDI_PORT" ] ; then
+    local mplay=""
+    [ -n "$SETLIST_MIDI" ] && mplay="$mplay $SETLIST_MIDI 127"
+    [ -n "$midi" ] && mplay="$mplay $midi 127"
+
+    #NOTE: we deliberately ignore errors here
+    if [ -n "$mplay" ] ; then
+      "$MIDI2DEV" --notes $mplay -c "$SCRIPT_NAME" -a "$MIDI_API" -o "$SETLIST_MIDI_PORT" > /dev/null &
+      EXIT_TRAP="$EXIT_TRAP ; kill $! &> /dev/null"
+    fi
+  fi
 
   local add=""
   [ -n "$duration" ] && printf -v add '%s --duration %d' "$add" "$duration"
@@ -482,6 +509,8 @@ local evals="${SETLIST["${index}_evals"]}"
   local cmd=""
   printf -v cmd "run -n %s %q %q" "$add" "$tempo" "$file"
   eval "$cmd" < /dev/null
+
+  wait
 ) &
 disown
 SETLIST_PROCESS=$!
@@ -490,12 +519,14 @@ SETLIST_PROCESS=$!
 function playSetlistNext {
 [ $(( $SETLIST_CUR +1 )) -lt $SETLIST_LENGTH ] || return
 SETLIST_CUR=$(( $SETLIST_CUR +1 ))
+SETLIST_MIDI="$SETLIST_MIDI_NEXT"
 playSetlist
 }
 
 function playSetlistPrevious {
 [ $SETLIST_CUR -eq 0 ] && return
 SETLIST_CUR=$(( $SETLIST_CUR -1 ))
+SETLIST_MIDI="$SETLIST_MIDI_PREVIOUS"
 playSetlist
 }
 

@@ -28,7 +28,7 @@ import sys
 import signal
 import rtmidi # rtmidi doc: https://spotlightkid.github.io/python-rtmidi/rtmidi.html
 import mido
-from mido import MidiFile # mido doc: https://mido.readthedocs.io/en/stable - mido is just used to read the file; otherwise rtmidi is used
+from mido import MidiFile, MidiTrack, Message # mido doc: https://mido.readthedocs.io/en/stable - mido is just used to read the file; otherwise rtmidi is used
 from rtmidi.midiutil import list_output_ports
 from rtmidi.midiutil import open_midiport
 
@@ -37,23 +37,35 @@ MIDIOUT = None
 START_TIME = None
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Play a MIDI file on a MIDI device.')
+    parser = argparse.ArgumentParser(description='Play a MIDI file or some notes on a MIDI device.')
     parser.add_argument('-f', '--file', help='File path to the MIDI input file to read from.')
     parser.add_argument('-o', '--output', help='MIDI output port to write to (port number or substring of a port name). If none is specified, a virtual output port is created and written to.')
     parser.add_argument('-a', '--api', default='default', choices=['jack', 'alsa', 'default'], help='MIDI API to use. Use default on non-Linux devices. (default: %(default)s)')
     parser.add_argument('-c', '--client', default='midi2dev', help='Name of the MIDI client to use. (default: %(default)s)')
     parser.add_argument('--loop', action='store_true', help='Loop the MIDI playback.')
     parser.add_argument('--duration', type=int, help='Time in seconds after which to terminate playback (default: as long as it takes).')
-    parser.add_argument('--equalize', type=int, nargs=2, metavar=("DURATION", "NOTE") , help='After the given duration in seconds, replace all incoming MIDI notes with the given note.')
+    parser.add_argument('--equalize', type=int, nargs=2, metavar=("DURATION", "NOTE"), help='After the given duration in seconds, replace all incoming MIDI notes with the given note.')
+    parser.add_argument('--notes', type=int, nargs='+', metavar=("NOTE", "VELOCITY"), help='Send the given MIDI (note, velocity) tuples to the output (default velocity: 127). Overrides --file.')
     parser.add_argument('--list', action='store_true', help='Just list the available APIs and their MIDI ports.')
     parser.add_argument('--debug', action='store_true', help='Print debug output.')
     args = parser.parse_args()
 
-    if not args.list and not args.file:
-        raise ValueError('You must either specify an output file or use --list. Use --help for a full description.')
+    if not args.list and not args.file and not args.notes:
+        raise ValueError('You must either specify an output file, note or use --list. Use --help for a full description.')
 
     if args.file:
         args.file = MidiFile(args.file)
+
+    if args.notes:
+        #set a default velocity for the last note, if necessary
+        if len(args.notes) % 2 == 1:
+            args.notes.append(127)
+        args.file = MidiFile()
+        track = MidiTrack()
+        args.file.tracks.append(track)
+        for note, velocity in zip(args.notes[::2], args.notes[1::2]):
+            track.append(Message('note_on', note=note, velocity=velocity, time=0))
+            track.append(Message('note_off', note=note, velocity=127, time=1))
 
     if args.equalize:
         duration, note = args.equalize

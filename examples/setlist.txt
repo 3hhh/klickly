@@ -17,6 +17,8 @@ tempo: 130
 file:  4-4/8th
 # We can also limit the click duration to the first 10 seconds:
 duration: 10
+# Send the below MIDI note to the configured $SETLIST_MIDI_PORT when this track is switched on:
+midi: 28
 
 title: Metallica - Master of puppets  
 tempo: 212
